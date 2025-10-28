@@ -1,0 +1,14 @@
+/out/
+
+/config/
+/logs/
+
+/src/main/java/config/
+/src/main/java/logs/
+
+*.iml
+.idea/
+*.class
+
+.DS_Store
+Thumbs.db

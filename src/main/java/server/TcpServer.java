@@ -1,113 +1,181 @@
 package server;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
-import java.util.Iterator;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.io.*;
+import java.net.*;
+import java.util.List;
 
-/**
- * TcpServer.java
- *
- * A non-blocking TCP server implementation using Java NIO.
- *
- * This class is responsible for the server's lifecycle. It binds to a port,
- * listens for incoming connections, and dispatches I/O events to worker
- * threads. The core of its operation is a single-threaded event loop
- * managed by a Selector.
- */
 public class TcpServer {
+    private ServerSocket serverSocket;
+    private Socket clientSocket;
+    private PrintWriter out;
+    private BufferedReader in;
+    private final String correctPassword = "admin123";
+    private final int port;
+    private final FileManager fileManager = new FileManager("config/settings.conf", "logs/server.log");
 
-    private static final String HOST = "127.0.0.1";
-    private static final int PORT = 8080;
-    private static final int THREAD_POOL_SIZE = 10;
+    // udp port for beacon listening
+    private static final int BEACON_PORT = 8888;
+    private volatile boolean running = true;
 
-    private final ExecutorService workerPool = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+    public TcpServer(int port) {
+        this.port = port;
+    }
 
-    /**
-     * Initializes and starts the server's main event loop.
-     */
     public void start() {
-        try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
-             Selector selector = Selector.open()) {
+        // init beacon listener
+        startBeaconListener();
 
-            serverSocketChannel.bind(new InetSocketAddress(HOST, PORT));
-            serverSocketChannel.configureBlocking(false);
-            serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
-
-            System.out.println("Server started. Listening on " + HOST + ":" + PORT);
-
-            while (true) {
-                selector.select(); // Blocks until at least one channel is ready for I/O.
-
-                Set<SelectionKey> selectedKeys = selector.selectedKeys();
-                Iterator<SelectionKey> keyIterator = selectedKeys.iterator();
-
-                while (keyIterator.hasNext()) {
-                    SelectionKey key = keyIterator.next();
-
-                    /*
-                     * <<< CRITICAL FIX FOR RACE CONDITION >>>
-                     * Before processing, we must ensure the key is still valid.
-                     * It's possible for a worker thread in ClientHandler to have
-                     * cancelled this key (e.g., on client disconnect) right after
-                     * the selector returned it. This check prevents a
-                     * CancelledKeyException.
-                     */
-                    if (!key.isValid()) {
-                        keyIterator.remove();
-                        continue;
-                    }
-
-                    if (key.isAcceptable()) {
-                        acceptConnection(key, selector);
-                    } else if (key.isReadable()) {
-                        readData(key);
-                    }
-
-                    keyIterator.remove();
-                }
-            }
+        try {
+            List<String> config = fileManager.readConfig();
+            System.out.println("--- Configuration Loaded ---");
+            config.forEach(System.out::println);
+            System.out.println("-----------------------------");
         } catch (IOException e) {
-            System.err.println("Server error: " + e.getMessage());
+            System.err.println("FATAL: Could not read configuration file. Server cannot start.");
+            e.printStackTrace();
+            return;
+        }
+
+        fileManager.log("Server starting up...");
+
+        try {
+            serverSocket = new ServerSocket(port);
+            System.out.println("[SERVER] Listening on port " + port);
+            fileManager.log("Server started. Listening on port " + port);
+
+            clientSocket = serverSocket.accept();
+            System.out.println("[SERVER] Client connected: " + clientSocket.getInetAddress());
+            fileManager.log("Client connected: " + clientSocket.getInetAddress());
+
+            out = new PrintWriter(clientSocket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+
+            sendToClient("Hello, client!", false);
+            sendToClient("REQUEST_PASSWORD", false);
+
+            handlePasswordCheck();
+
+        } catch (IOException e) {
+            System.err.println("[SERVER] Error: " + e.getMessage());
+            fileManager.log("ERROR: " + e.getMessage());
         } finally {
-            workerPool.shutdown();
+            stop();
         }
     }
 
-    /**
-     * Handles new incoming client connections.
-     *
-     * @param key The selection key representing the acceptance event.
-     * @param selector The main selector to register the new client channel with.
-     * @throws IOException If an I/O error occurs when accepting the connection.
-     */
-    private void acceptConnection(SelectionKey key, Selector selector) throws IOException {
-        ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
-        SocketChannel clientChannel = serverChannel.accept();
-        clientChannel.configureBlocking(false);
-        clientChannel.register(selector, SelectionKey.OP_READ);
-        System.out.println("Accepted new connection from: " + clientChannel.getRemoteAddress());
+    private void sendToClient(String message, boolean log) {
+        if (out != null) {
+            out.println(message);
+            if (log) System.out.println("[SERVER] Sent: " + message);
+            fileManager.log("Sent: " + message);
+        }
     }
 
-    /**
-     * Dispatches a readable channel to a worker thread for processing.
-     *
-     * @param key The selection key representing the readable event.
-     */
-    private void readData(SelectionKey key) {
-        workerPool.submit(new ClientHandler(key));
+    private String receiveFromClient() {
+        try {
+            if (in != null) {
+                String msg = in.readLine();
+                if (msg != null) {
+                    System.out.println("[SERVER] Received: " + msg);
+                    fileManager.log("Received: " + msg);
+                }
+                return msg;
+            }
+        } catch (IOException e) {
+            System.err.println("[SERVER] Error reading message: " + e.getMessage());
+            fileManager.log("ERROR: " + e.getMessage());
+        }
+        return null;
     }
 
-    /**
-     * Main entry point to create and run the server.
-     */
+    private void handlePasswordCheck() {
+        while (true) {
+            String clientPassword = receiveFromClient();
+
+            if (clientPassword == null) {
+                System.out.println("[SERVER] Client disconnected");
+                fileManager.log("Client disconnected during password check");
+                break;
+            }
+
+            if (clientPassword.equals(correctPassword)) {
+                sendToClient("PASSED", false);
+                System.out.println("[SERVER] Password accepted!");
+                fileManager.log("Password accepted");
+                handleClientSession();
+                break;
+            } else {
+                sendToClient("FAILED", false);
+                System.out.println("[SERVER] Wrong password attempt");
+                fileManager.log("Wrong password attempt");
+            }
+        }
+    }
+
+    private void handleClientSession() {
+        sendToClient("Welcome! You are now authenticated.", false);
+
+        while (true) {
+            String message = receiveFromClient();
+            if (message == null || message.equalsIgnoreCase("exit")) {
+                fileManager.log("Client session ended");
+                break;
+            }
+            sendToClient("Echo: " + message, false);
+        }
+    }
+
+    // thread for beacon listening
+    private void startBeaconListener() {
+        Thread listenerThread = new Thread(() -> {
+            try (DatagramSocket socket = new DatagramSocket(BEACON_PORT)) {
+                socket.setBroadcast(true);
+                byte[] buffer = new byte[1024];
+                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+                System.out.println("[BEACON] Listening for beacons on UDP port " + BEACON_PORT);
+
+                while (running) {
+                    socket.receive(packet);
+                    String message = new String(packet.getData(), 0, packet.getLength());
+
+                    // filter and log only overseer beacons
+                    if (message.startsWith("OVERSEER_BEACON")) {
+                        System.out.println("[BEACON] Received: " + message + " from " + packet.getAddress());
+                        fileManager.log("Beacon received: " + message + " from " + packet.getAddress());
+                    }
+                }
+
+            } catch (IOException e) {
+                if (running) {
+                    System.err.println("[BEACON] Error: " + e.getMessage());
+                    fileManager.log("ERROR in Beacon Listener: " + e.getMessage());
+                }
+            }
+        });
+
+        listenerThread.setDaemon(true);
+        listenerThread.start();
+    }
+
+    public void stop() {
+        running = false;
+        try {
+            if (in != null) in.close();
+            if (out != null) out.close();
+            if (clientSocket != null) clientSocket.close();
+            if (serverSocket != null) serverSocket.close();
+            System.out.println("[SERVER] Server stopped");
+            fileManager.log("Server has shut down");
+        } catch (IOException e) {
+            System.err.println("[SERVER] Error stopping server: " + e.getMessage());
+            fileManager.log("ERROR: " + e.getMessage());
+        }
+    }
+
     public static void main(String[] args) {
-        new TcpServer().start();
+        TcpServer server = new TcpServer(8080);
+        server.start();
+        server.sendToClient("Server is shutting down. Goodbye!", false);
     }
 }
