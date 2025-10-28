@@ -1,2 +1,2 @@
-java -cp out server.TcpClient
+java -cp target/classes server.TcpClient
 

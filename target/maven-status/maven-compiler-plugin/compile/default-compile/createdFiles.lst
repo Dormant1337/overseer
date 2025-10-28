@@ -1,3 +1,7 @@
+server/TcpClient.class
+server/BeaconListener.class
+server/FileManager.class
+server/ClientHandler.class
+server/BeaconSender.class
 com/example/overseer/App.class
 server/TcpServer.class
-server/TcpClient.class

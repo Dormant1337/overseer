@@ -22,6 +22,20 @@ public class FileManager {
 
     public List<String> readConfig() throws IOException {
         System.out.println("Reading config from: " + configFile.toAbsolutePath());
+        if (Files.notExists(configFile)) {
+            List<String> defaultConfig = List.of(
+                "server_port=8080",
+                "server_name=DefaultServer",
+                "log_level=INFO"
+            );
+            Path parentDir = configFile.getParent();
+            if (parentDir != null && Files.notExists(parentDir)) {
+                Files.createDirectories(parentDir);
+            }
+            Files.write(configFile, defaultConfig);
+            System.out.println("Default configuration file created at: " + configFile.toAbsolutePath());
+            return defaultConfig;
+        }
         return Files.readAllLines(configFile);
     }
 

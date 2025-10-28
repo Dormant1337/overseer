@@ -1,3 +1,7 @@
-/home/dormant/Programming/java/overseer/overseer/src/main/java/com/example/overseer/App.java
-/home/dormant/Programming/java/overseer/overseer/src/main/java/server/TcpClient.java
-/home/dormant/Programming/java/overseer/overseer/src/main/java/server/TcpServer.java
+/home/syn4pse/overseer/src/main/java/com/example/overseer/App.java
+/home/syn4pse/overseer/src/main/java/server/BeaconListener.java
+/home/syn4pse/overseer/src/main/java/server/BeaconSender.java
+/home/syn4pse/overseer/src/main/java/server/ClientHandler.java
+/home/syn4pse/overseer/src/main/java/server/FileManager.java
+/home/syn4pse/overseer/src/main/java/server/TcpClient.java
+/home/syn4pse/overseer/src/main/java/server/TcpServer.java
