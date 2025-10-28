@@ -11,7 +11,7 @@ Currently in active development — this version focuses on core communication a
 ```bash
 git clone https://github.com/Dormant1337/overseer.git
 cd overseer
-mvn package
+mvn clean package
 java -jar target/overseer-1.0-SNAPSHOT.jar
 
 ```
