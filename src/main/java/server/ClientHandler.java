@@ -63,15 +63,20 @@ public class ClientHandler implements Runnable {
      * Centralized resource cleanup for a disconnected client.
      */
     private void handleDisconnect() {
-        try {
-            System.out.println("Client disconnected: " + getClientAddressSafe());
+    try {
+        System.out.println("Client disconnected: " + getClientAddressSafe());
+        
+        if (selectionKey != null && selectionKey.isValid()) {
             selectionKey.cancel();
-            clientChannel.close();
-        } catch (IOException e) {
-            // We are already handling a disconnect, so further errors in closing are logged but not critical.
-            System.err.println("Error while closing client connection: " + e.getMessage());
         }
+        
+        if (clientChannel != null && clientChannel.isOpen()) {
+            clientChannel.close();
+        }
+    } catch (IOException e) {
+        System.err.println("Error while closing client connection: " + e.getMessage());
     }
+}
 
     /**
      * Safely retrieves the client's remote address as a string.

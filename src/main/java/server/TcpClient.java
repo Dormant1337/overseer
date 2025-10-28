@@ -84,13 +84,16 @@ public class TcpClient {
 
             response = response.trim().toUpperCase();
 
-            if (response.equals("PASSED")) {
-                System.out.println("[CLIENT] Password Accepted. You passed.");
-                break;
-            } else if (response.equals("FAILED")) {
-                System.out.println("[CLIENT] Wrong password, try again.");
-            } else {
-                System.out.println("[CLIENT] Unknown response: " + response);
+            switch (response) {
+                case "PASSED":
+                    System.out.println("[CLIENT] Password Accepted. You passed.");
+                    break;
+                case "FAILED":
+                    System.out.println("[CLIENT] Wrong password, try again.");
+                    break;
+                default:
+                    System.out.println("[CLIENT] Unknown response: " + response);
+                    break;
             }
         }
     }
@@ -144,22 +147,20 @@ public class TcpClient {
         TcpClient client = new TcpClient("127.0.0.1", 8080);
         client.connect();
 
-        // init beacon
         client.startBeaconThread();
 
-        Scanner scanner = new Scanner(System.in);
+        try (Scanner scanner = new Scanner(System.in)) {
+            client.receiveMessage(false);
 
-        client.receiveMessage(false);
+            String msg = client.receiveMessage(false);
+            if (msg != null && msg.equals("REQUEST_PASSWORD")) {
+                System.out.println("[CLIENT] Server requested password. Please enter:");
+            }
 
-        String msg = client.receiveMessage(false);
-        if (msg != null && msg.equals("REQUEST_PASSWORD")) {
-            System.out.println("[CLIENT] Server requested password. Please enter:");
+            client.checkPassword(scanner);
+            client.runSession();
+
+            client.disconnect();
         }
-
-        client.checkPassword(scanner);
-        client.runSession();
-
-        scanner.close();
-        client.disconnect();
     }
 }

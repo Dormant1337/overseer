@@ -32,7 +32,7 @@ public class TcpServer {
             System.out.println("-----------------------------");
         } catch (IOException e) {
             System.err.println("FATAL: Could not read configuration file. Server cannot start.");
-            e.printStackTrace();
+            fileManager.log("FATAL: Could not read configuration file: " + e.getMessage());
             return;
         }
 
